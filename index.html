@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TAZA 3D — Interactive Architectural Exploration</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap');
+
+  :root {
+    --gold: #d4af37;
+    --gold-light: #f3e5ab;
+    --bg: #07090d;
+    --glass: rgba(12, 16, 24, 0.65);
+    --border: rgba(212, 175, 55, 0.3);
+    --text: #f4f1ea;
+    --muted: #a39e93;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body, html {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    user-select: none;
+  }
+
+  #canvas-container {
+    position: fixed; inset: 0; z-index: 1;
+  }
+
+  /* HUD Overlay */
+  .hud-top {
+    position: fixed; top: 28px; left: 36px; right: 36px;
+    display: flex; justify-content: space-between; align-items: center;
+    z-index: 10; pointer-events: none;
+  }
+
+  .logo {
+    font-family: 'Cinzel', serif; font-weight: 800; font-size: 20px;
+    letter-spacing: 0.25em; color: var(--gold-light);
+    text-shadow: 0 4px 20px rgba(0,0,0,0.8);
+  }
+  .logo span {
+    display: block; font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 10px; letter-spacing: 0.35em; color: var(--gold);
+    margin-top: 4px; font-weight: 600;
+  }
+
+  .coords {
+    font-family: monospace; font-size: 12px; color: var(--gold);
+    background: var(--glass); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: 30px; backdrop-filter: blur(10px);
+    letter-spacing: 0.1em;
+  }
+
+  /* 3D Floating Pointers */
+  .marker {
+    position: fixed; z-index: 5; pointer-events: none;
+    transform: translate(-50%, -100%);
+    transition: opacity 0.4s ease;
+  }
+  .marker-dot {
+    width: 12px; height: 12px; background: var(--gold);
+    border-radius: 50%; margin: 0 auto;
+    box-shadow: 0 0 15px var(--gold), 0 0 30px var(--gold);
+    animation: pulse 2s infinite;
+  }
+  .marker-line {
+    width: 1px; height: 35px; background: linear-gradient(to top, var(--gold), transparent);
+    margin: 0 auto;
+  }
+  .marker-label {
+    background: var(--glass); border: 1px solid var(--border);
+    padding: 5px 12px; border-radius: 6px; font-size: 11px;
+    font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--gold-light); backdrop-filter: blur(8px);
+    white-space: nowrap;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.6); opacity: 0.5; }
+  }
+
+  /* Content Card */
+  .story-panel {
+    position: fixed; left: 36px; bottom: 100px;
+    width: min(440px, calc(100vw - 72px));
+    background: var(--glass); border: 1px solid var(--border);
+    border-radius: 20px; padding: 28px;
+    backdrop-filter: blur(16px); z-index: 10;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.6);
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease;
+  }
+  .story-panel.switching {
+    opacity: 0; transform: translateY(20px);
+  }
+
+  .step-tag {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.25em;
+    color: var(--gold); text-transform: uppercase; margin-bottom: 8px;
+  }
+  .story-title {
+    font-family: 'Cinzel', serif; font-size: 28px; font-weight: 800;
+    line-height: 1.15; margin-bottom: 12px; color: #fff;
+  }
+  .story-desc {
+    font-size: 14.5px; line-height: 1.65; color: var(--muted);
+    margin-bottom: 20px;
+  }
+  .story-stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px;
+  }
+  .stat-box span {
+    display: block; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.15em; color: var(--muted);
+  }
+  .stat-box b {
+    font-size: 16px; color: var(--gold-light); margin-top: 3px; display: block;
+  }
+
+  /* Navigation Controls */
+  .nav-bar {
+    position: fixed; bottom: 28px; left: 36px; right: 36px;
+    display: flex; justify-content: space-between; align-items: center;
+    z-index: 10;
+  }
+  .dots {
+    display: flex; gap: 10px;
+  }
+  .dot {
+    width: 32px; height: 4px; background: rgba(255,255,255,0.2);
+    border-radius: 2px; cursor: pointer; transition: 0.3s;
+  }
+  .dot.active {
+    background: var(--gold); width: 54px; box-shadow: 0 0 12px var(--gold);
+  }
+
+  .btns { display: flex; gap: 12px; }
+  button {
+    background: var(--glass); border: 1px solid var(--border);
+    color: var(--text); padding: 12px 22px; border-radius: 30px;
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;
+    backdrop-filter: blur(10px); transition: 0.25s;
+  }
+  button:hover {
+    border-color: var(--gold); background: rgba(212, 175, 55, 0.15);
+  }
+  button.primary {
+    background: var(--gold); color: #07090d; border-color: var(--gold);
+    font-weight: 700;
+  }
+  button.primary:hover {
+    background: var(--gold-light); transform: translateY(-2px);
+  }
+
+  .hint-mouse {
+    position: fixed; right: 36px; bottom: 100px; z-index: 8;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--muted); writing-mode: vertical-rl;
+    opacity: 0.7; pointer-events: none;
+  }
+
+  @media (max-width: 768px) {
+    .hud-top { top: 18px; left: 20px; right: 20px; }
+    .story-panel { left: 20px; bottom: 85px; padding: 20px; }
+    .story-title { font-size: 22px; }
+    .nav-bar { left: 20px; right: 20px; bottom: 20px; }
+    .hint-mouse { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<!-- Top HUD -->
+<div class="hud-top">
+  <div class="logo">TAZA 3D<span>CORRIDOR OF MOROCCO</span></div>
+  <div class="coords" id="coords">34°13'N 04°01'W • ALT 550M</div>
+</div>
+
+<!-- 3D Projected HTML Labels -->
+<div class="marker" id="m-medina"><div class="marker-label">Taza Haut (Medina)</div><div class="marker-line"></div><div class="marker-dot"></div></div>
+<div class="marker" id="m-mosque"><div class="marker-label">Grande Mosquée (1142)</div><div class="marker-line"></div><div class="marker-dot"></div></div>
+<div class="marker" id="m-bab"><div class="marker-label">Bab El-Rih</div><div class="marker-line"></div><div class="marker-dot"></div></div>
+<div class="marker" id="m-friouato"><div class="marker-label">Gouffre de Friouato</div><div class="marker-line"></div><div class="marker-dot"></div></div>
+
+<!-- Story Card -->
+<div class="story-panel" id="storyPanel">
+  <div class="step-tag" id="stepTag">01 / 05 • OVERVIEW</div>
+  <h1 class="story-title" id="storyTitle">The Mountain Citadel</h1>
+  <p class="story-desc" id="storyDesc">Strategically perched in the Taza Gap where the Rif Mountains meet the Middle Atlas, Taza has guarded the historic corridor between Fez and the East for over a millennium.</p>
+  <div class="story-stats">
+    <div class="stat-box"><span id="s1Label">Elevation</span><b id="s1Val">550 m – 1,980 m</b></div>
+    <div class="stat-box"><span id="s2Label">Strategic Role</span><b id="s2Val">Rif–Atlas Corridor</b></div>
+  </div>
+</div>
+
+<div class="hint-mouse">Move cursor to orbit • Scroll or Next to fly</div>
+
+<!-- Bottom Navigation -->
+<div class="nav-bar">
+  <div class="dots" id="dotsContainer"></div>
+  <div class="btns">
+    <button id="prevBtn">‹ Prev</button>
+    <button class="primary" id="nextBtn">Fly Next ›</button>
+  </div>
+</div>
+
+<!-- Three.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+  // --- 1. SCENE & RENDERER SETUP ---
+  const container = document.getElementById('canvas-container');
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x07090d, 0.011);
+
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+
+  // --- 2. LIGHTING ---
+  const ambientLight = new THREE.AmbientLight(0x2a3548, 1.4);
+  scene.add(ambientLight);
+
+  const sunLight = new THREE.DirectionalLight(0xffdfa0, 2.2);
+  sunLight.position.set(45, 65, 35);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.width = 2048;
+  sunLight.shadow.mapSize.height = 2048;
+  sunLight.shadow.camera.near = 10;
+  sunLight.shadow.camera.far = 180;
+  const d = 55;
+  sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
+  sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+  scene.add(sunLight);
+
+  const rimLight = new THREE.DirectionalLight(0x3b82f6, 0.9);
+  rimLight.position.set(-50, 25, -40);
+  scene.add(rimLight);
+
+  // --- 3. PROCEDURAL 3D ARCHITECTURAL MODEL OF TAZA ---
+  const cityGroup = new THREE.Group();
+  scene.add(cityGroup);
+
+  // Materials
+  const terrainMat = new THREE.MeshStandardMaterial({ color: 0x131922, roughness: 0.9, metalness: 0.1, flatShading: true });
+  const plateauMat = new THREE.MeshStandardMaterial({ color: 0x222936, roughness: 0.85, flatShading: true });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xc29b61, roughness: 0.7 });
+  const buildingMat = new THREE.MeshStandardMaterial({ color: 0xd8c3a5, roughness: 0.65 });
+  const roofGreenMat = new THREE.MeshStandardMaterial({ color: 0x0a7a4b, roughness: 0.4, metalness: 0.2 });
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.2, metalness: 0.85, emissive: 0x332500 });
+  const waterMat = new THREE.MeshStandardMaterial({ color: 0x0ea5e9, roughness: 0.15, metalness: 0.8, transparent: true, opacity: 0.75 });
+
+  // Base Valley & Surrounding Mountains (Rif & Middle Atlas)
+  const groundGeo = new THREE.PlaneGeometry(240, 240, 64, 64);
+  groundGeo.rotateX(-Math.PI / 2);
+  const posAttr = groundGeo.attributes.position;
+  for (let i = 0; i < posAttr.count; i++) {
+    const x = posAttr.getX(i);
+    const z = posAttr.getZ(i);
+    const dist = Math.sqrt(x * x + z * z);
+    // Create valley corridor in center, mountains on North (Rif) and South (Atlas)
+    let h = 0;
+    if (Math.abs(z) > 22) {
+      h = (Math.abs(z) - 22) * 0.45 + Math.sin(x * 0.12) * 3.5 + Math.cos(z * 0.15) * 3.5;
+    }
+    if (dist > 75) h += (dist - 75) * 0.3;
+    posAttr.setY(i, Math.max(-1, h));
+  }
+  groundGeo.computeVertexNormals();
+  const terrain = new THREE.Mesh(groundGeo, terrainMat);
+  terrain.receiveShadow = true;
+  cityGroup.add(terrain);
+
+  // Taza Haut Cliff / Plateau
+  const cliffGeo = new THREE.CylinderGeometry(16, 21, 7, 12);
+  const cliff = new THREE.Mesh(cliffGeo, plateauMat);
+  cliff.position.set(0, 3.5, 0);
+  cliff.scale.set(1.25, 1, 0.85);
+  cliff.castShadow = true;
+  cliff.receiveShadow = true;
+  cityGroup.add(cliff);
+
+  // Historic Ramparts (Les Remparts)
+  const wallPoints = [
+    [-18, -11], [18, -11], [20, 0], [17, 11], [-17, 11], [-20, 0]
+  ];
+  for (let i = 0; i < wallPoints.length; i++) {
+    const p1 = wallPoints[i];
+    const p2 = wallPoints[(i + 1) % wallPoints.length];
+    const dx = p2[0] - p1[0], dz = p2[1] - p1[1];
+    const len = Math.sqrt(dx * dx + dz * dz);
+    const angle = Math.atan2(dz, dx);
+
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(len, 2.4, 0.8), wallMat);
+    wall.position.set((p1[0] + p2[0]) / 2, 8.1, (p1[1] + p2[1]) / 2);
+    wall.rotation.y = -angle;
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    cityGroup.add(wall);
+
+    // Watchtowers (Borj)
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(1.8, 3.4, 1.8), wallMat);
+    tower.position.set(p1[0], 8.6, p1[1]);
+    tower.castShadow = true;
+    cityGroup.add(tower);
+  }
+
+  // Bab El-Rih (Monumental Archway)
+  const gateGroup = new THREE.Group();
+  gateGroup.position.set(0, 7, 11.2);
+  const leftPillar = new THREE.Mesh(new THREE.BoxGeometry(1.8, 3.8, 1.8), wallMat);
+  leftPillar.position.set(-1.6, 1.9, 0);
+  const rightPillar = new THREE.Mesh(new THREE.BoxGeometry(1.8, 3.8, 1.8), wallMat);
+  rightPillar.position.set(1.6, 1.9, 0);
+  const topArch = new THREE.Mesh(new THREE.BoxGeometry(5.2, 1.3, 2.0), goldMat);
+  topArch.position.set(0, 3.6, 0);
+  gateGroup.add(leftPillar, rightPillar, topArch);
+  cityGroup.add(gateGroup);
+
+  // Medina Houses (Procedural Cluster)
+  const houseGeo = new THREE.BoxGeometry(1, 1, 1);
+  for (let i = 0; i < 140; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * 14.5;
+    const hx = Math.cos(angle) * radius * 1.15;
+    const hz = Math.sin(angle) * radius * 0.72;
+    // Keep clear around Grande Mosquée
+    if (Math.abs(hx + 3) < 4.5 && Math.abs(hz + 1) < 4.5) continue;
+
+    const w = 1.1 + Math.random() * 1.4;
+    const d = 1.1 + Math.random() * 1.4;
+    const h = 1.0 + Math.random() * 1.8;
+    const house = new THREE.Mesh(houseGeo, buildingMat);
+    house.scale.set(w, h, d);
+    house.position.set(hx, 7 + h / 2, hz);
+    house.castShadow = true;
+    house.receiveShadow = true;
+    cityGroup.add(house);
+  }
+
+  // La Grande Mosquée de Taza (Almohad Landmark)
+  const mosqueGroup = new THREE.Group();
+  mosqueGroup.position.set(-3.5, 7, -1);
+  const courtyard = new THREE.Mesh(new THREE.BoxGeometry(6.5, 1.6, 5.2), buildingMat);
+  courtyard.position.y = 0.8;
+  const greenRoof = new THREE.Mesh(new THREE.BoxGeometry(6.7, 0.35, 5.4), roofGreenMat);
+  greenRoof.position.y = 1.75;
+  const minaret = new THREE.Mesh(new THREE.BoxGeometry(1.5, 6.8, 1.5), wallMat);
+  minaret.position.set(2.8, 3.4, -2.0);
+  const lantern = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.8), goldMat);
+  lantern.position.set(2.8, 7.3, -2.0);
+  mosqueGroup.add(courtyard, greenRoof, minaret, lantern);
+  cityGroup.add(mosqueGroup);
+
+  // Oued Taza (River in Taza Bas)
+  const river = new THREE.Mesh(new THREE.PlaneGeometry(180, 3.2), waterMat);
+  river.rotation.x = -Math.PI / 2;
+  river.position.set(0, 0.15, 18);
+  cityGroup.add(river);
+
+  // Gouffre de Friouato Marker Crystal (In the Middle Atlas foothills)
+  const friouatoGroup = new THREE.Group();
+  friouatoGroup.position.set(-24, 6, -34);
+  const caveRing = new THREE.Mesh(new THREE.TorusGeometry(2.5, 0.35, 16, 32), goldMat);
+  caveRing.rotation.x = Math.PI / 2;
+  const caveCore = new THREE.Mesh(new THREE.OctahedronGeometry(1.4), new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true }));
+  caveCore.position.y = 1.5;
+  friouatoGroup.add(caveRing, caveCore);
+  cityGroup.add(friouatoGroup);
+
+  // Floating Golden Dust Particles
+  const partGeo = new THREE.BufferGeometry();
+  const partCount = 450;
+  const partPos = new Float32Array(partCount * 3);
+  for (let i = 0; i < partCount * 3; i++) {
+    partPos[i] = (Math.random() - 0.5) * 140;
+    if (i % 3 === 1) partPos[i] = Math.random() * 45;
+  }
+  partGeo.setAttribute('position', new THREE.BufferAttribute(partPos, 3));
+  const particles = new THREE.Points(partGeo, new THREE.PointsMaterial({ color: 0xd4af37, size: 0.35, transparent: true, opacity: 0.6 }));
+  scene.add(particles);
+
+  // --- 4. CAMERA WAYPOINTS (THE 3D PRESENTATION SLIDES) ---
+  const SLIDES = [
+    {
+      tag: "01 / 05 • AERIAL OVERVIEW",
+      title: "The Mountain Citadel",
+      desc: "Perched in the historic Taza Gap where the Rif Mountains meet the Middle Atlas, Taza has controlled the vital corridor between Fez and Eastern Morocco for over 1,000 years.",
+      s1Label: "Strategic Altitude", s1Val: "550 m – 1,980 m",
+      s2Label: "Geography", s2Val: "Rif & Middle Atlas",
+      coords: "34°13'N 04°01'W • ALT 550M",
+      camPos: new THREE.Vector3(0, 34, 52),
+      lookAt: new THREE.Vector3(0, 6, 0)
+    },
+    {
+      tag: "02 / 05 • ALMOHAD HERITAGE",
+      title: "La Grande Mosquée",
+      desc: "Founded in 1142 by the Almohad ruler Abd al-Mu'min, it is the oldest surviving Almohad monument—famous for its massive 3-ton bronze chandelier and intricate cedarwood ceilings.",
+      s1Label: "Founded", s1Val: "1142 AD (Almohad)",
+      s2Label: "Masterpiece", s2Val: "514-Lamp Chandelier",
+      coords: "34°12'48\"N 04°01'07\"W",
+      camPos: new THREE.Vector3(-14, 17, 12),
+      lookAt: new THREE.Vector3(-3.5, 9, -1)
+    },
+    {
+      tag: "03 / 05 • DEFENSIVE ARCHITECTURE",
+      title: "Bab El-Rih & Ramparts",
+      desc: "Encircled by 3 kilometers of fortified stone walls and monumental bastions like Borj East, Bab El-Rih ('Gate of the Wind') overlooks the sweeping valley below.",
+      s1Label: "Fortifications", s1Val: "3 km Stone Ramparts",
+      s2Label: "Key Landmark", s2Val: "Bab El-Rih Gate",
+      coords: "34°12'41\"N 04°01'02\"W",
+      camPos: new THREE.Vector3(12, 13, 25),
+      lookAt: new THREE.Vector3(0, 8.5, 11)
+    },
+    {
+      tag: "04 / 05 • NATURAL WONDER",
+      title: "Gouffre de Friouato",
+      desc: "Just south of the city in Tazekka National Park lies North Africa's deepest explored vertical cavern system, plunging over 270 meters beneath the Middle Atlas limestone.",
+      s1Label: "Depth", s1Val: "272 Meters",
+      s2Label: "Protected Area", s2Val: "Tazekka National Park",
+      coords: "34°06'15\"N 04°04'18\"W",
+      camPos: new THREE.Vector3(-12, 22, -14),
+      lookAt: new THREE.Vector3(-24, 6, -34)
+    },
+    {
+      tag: "05 / 05 • URBAN DUALITY",
+      title: "Taza Haut & Taza Bas",
+      desc: "A harmonious blend of two worlds: the ancient fortified Medina crowning the cliffside plateau, seamlessly connected to the modern avenues and green valleys of Taza Bas.",
+      s1Label: "Region", s1Val: "Fès-Meknès",
+      s2Label: "Legacy", s2Val: "Gateway of the East",
+      coords: "TAZA CITY • MOROCCO",
+      camPos: new THREE.Vector3(38, 26, 36),
+      lookAt: new THREE.Vector3(0, 5, 4)
+    }
+  ];
+
+  let currentSlide = 0;
+  let targetCamPos = SLIDES[0].camPos.clone();
+  let targetLookAt = SLIDES[0].lookAt.clone();
+  const currentLookAt = SLIDES[0].lookAt.clone();
+  camera.position.copy(SLIDES[0].camPos);
+
+  // Build Dots
+  const dotsContainer = document.getElementById('dotsContainer');
+  SLIDES.forEach((_, idx) => {
+    const dot = document.createElement('div');
+    dot.className = 'dot' + (idx === 0 ? ' active' : '');
+    dot.onclick = () => goToSlide(idx);
+    dotsContainer.appendChild(dot);
+  });
+
+  function goToSlide(index) {
+    currentSlide = (index + SLIDES.length) % SLIDES.length;
+    const s = SLIDES[currentSlide];
+
+    targetCamPos.copy(s.camPos);
+    targetLookAt.copy(s.lookAt);
+
+    // Update Dots
+    document.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === currentSlide));
+
+    // Smooth UI Card Update
+    const panel = document.getElementById('storyPanel');
+    panel.classList.add('switching');
+    setTimeout(() => {
+      document.getElementById('stepTag').textContent = s.tag;
+      document.getElementById('storyTitle').textContent = s.title;
+      document.getElementById('storyDesc').textContent = s.desc;
+      document.getElementById('s1Label').textContent = s.s1Label;
+      document.getElementById('s1Val').textContent = s.s1Val;
+      document.getElementById('s2Label').textContent = s.s2Label;
+      document.getElementById('s2Val').textContent = s.s2Val;
+      document.getElementById('coords').textContent = s.coords;
+      panel.classList.remove('switching');
+    }, 280);
+  }
+
+  document.getElementById('nextBtn').onclick = () => goToSlide(currentSlide + 1);
+  document.getElementById('prevBtn').onclick = () => goToSlide(currentSlide - 1);
+
+  // Keyboard & Wheel navigation
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') goToSlide(currentSlide + 1);
+    if (e.key === 'ArrowLeft') goToSlide(currentSlide - 1);
+  });
+
+  let wheelLock = false;
+  window.addEventListener('wheel', (e) => {
+    if (wheelLock) return;
+    if (Math.abs(e.deltaY) > 25) {
+      wheelLock = true;
+      goToSlide(currentSlide + (e.deltaY > 0 ? 1 : -1));
+      setTimeout(() => wheelLock = false, 900);
+    }
+  });
+
+  // Mouse Parallax Orbit
+  let mouseX = 0, mouseY = 0;
+  window.addEventListener('mousemove', (e) => {
+    mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+    mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+  });
+
+  // --- 5. PROJECT 3D POINTS TO 2D SCREEN MARKERS ---
+  const markers = [
+    { el: document.getElementById('m-medina'), pos: new THREE.Vector3(6, 11, -3) },
+    { el: document.getElementById('m-mosque'), pos: new THREE.Vector3(-3.5, 15, -1) },
+    { el: document.getElementById('m-bab'), pos: new THREE.Vector3(0, 11.5, 11.2) },
+    { el: document.getElementById('m-friouato'), pos: new THREE.Vector3(-24, 9.5, -34) }
+  ];
+
+  function updateMarkers() {
+    markers.forEach(m => {
+      const v = m.pos.clone().project(camera);
+      if (v.z > 1) {
+        m.el.style.opacity = '0';
+        return;
+      }
+      const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+      const y = (-(v.y * 0.5) + 0.5) * window.innerHeight;
+      m.el.style.left = `${x}px`;
+      m.el.style.top = `${y}px`;
+      m.el.style.opacity = '1';
+    });
+  }
+
+  // --- 6. ANIMATION LOOP ---
+  const clock = new THREE.Clock();
+  function animate() {
+    requestAnimationFrame(animate);
+    const t = clock.getElapsedTime();
+
+    // Gentle floating & crystal rotation
+    caveCore.rotation.y = t * 1.2;
+    caveCore.rotation.x = t * 0.6;
+    particles.rotation.y = t * 0.03;
+
+    // Smooth Camera Fly-through + Mouse Parallax
+    const parallaxOffset = new THREE.Vector3(mouseX * 4.5, -mouseY * 2.5, 0);
+    const desiredPos = targetCamPos.clone().add(parallaxOffset);
+
+    camera.position.lerp(desiredPos, 0.045);
+    currentLookAt.lerp(targetLookAt, 0.06);
+    camera.lookAt(currentLookAt);
+
+    updateMarkers();
+    renderer.render(scene, camera);
+  }
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  animate();
+</script>
+</body>
+</html>
